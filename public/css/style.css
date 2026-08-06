@@ -1,0 +1,36 @@
+:root {
+    --primary-blue: #0f4c81;
+    --secondary-green: #2d9d78;
+    --light-bg: #f8f9fa;
+}
+
+body {
+    background-color: var(--light-bg);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.bg-vitasalud-blue {
+    background-color: var(--primary-blue) !important;
+}
+
+.text-vitasalud-green {
+    color: var(--secondary-green) !important;
+}
+
+.sidebar {
+    background-color: var(--primary-blue);
+}
+
+.sidebar .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.fs-7 { font-size: 0.875rem; }
+.animate-pulse {
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
