@@ -1,7 +1,9 @@
 <?php
 // =========================================================================
-// VITASALUD - CONTROLADOR DE PACIENTES (controllers/PacienteController.php)
+// VITASALUD - CONTROLADOR DE PACIENTES Y ROLES (controllers/PacienteController.php)
 // =========================================================================
+
+require_once __DIR__ . '/../models/Paciente.php';
 
 class PacienteController {
 
@@ -18,209 +20,163 @@ class PacienteController {
         }
     }
 
-    public function index() {
-        try {
-            $db = $this->getDB();
-
-            // 1. Obtener lista de Médicos ligada a 'black_especialidades'
-            $sqlMedicos = "SELECT 
-                            m.id AS medico_id, 
-                            CONCAT(u.nombre, ' ', u.apellido) AS nombre_completo, 
-                            IFNULL(e.nombre, 'Medicina General') AS especialidad 
-                        FROM medicos m
-                        INNER JOIN usuarios u ON m.usuario_id = u.id
-                        LEFT JOIN black_especialidades e ON m.especialidad_id = e.id
-                        ORDER BY m.id ASC";
-            
-            $stmtMedicos = $db->prepare($sqlMedicos);
-            $stmtMedicos->execute();
-            $medicos = $stmtMedicos->fetchAll(PDO::FETCH_ASSOC);
-
-            // 2. Obtener la Cola de Espera desde la tabla 'citas'
-            $sqlCola = "SELECT 
-                            c.id AS cita_id,
-                            CONCAT(p.nombres, ' ', p.apellidos) AS paciente_nombre,
-                            p.expediente,
-                            CONCAT(u.nombre, ' ', u.apellido) AS medico_nombre,
-                            c.estado,
-                            c.tipo_ingreso,
-                            DATE_FORMAT(c.created_at, '%h:%i %p') AS hora_entrada
-                        FROM citas c
-                        INNER JOIN pacientes p ON c.paciente_id = p.id
-                        INNER JOIN medicos m ON c.medico_id = m.id
-                        INNER JOIN usuarios u ON m.usuario_id = u.id
-                        WHERE c.estado = 'En espera'
-                        ORDER BY c.created_at ASC";
-
-            $stmtCola = $db->prepare($sqlCola);
-            $stmtCola->execute();
-            $colaEspera = $stmtCola->fetchAll(PDO::FETCH_ASSOC);
-
-        } catch (Exception $e) {
-            $medicos = [];
-            $colaEspera = [];
+    private function verificarSesion() {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
         }
+        if (!isset($_SESSION['usuario_id'])) {
+            header("Location: index.php?action=login");
+            exit();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // VISTA PRINCIPAL (DASHBOARD SEGÚN ROL)
+    // ---------------------------------------------------------------------
+    public function index() {
+        $this->verificarSesion();
+        $db = $this->getDB();
+
+        $rol = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 2;
+        $usuario_id = $_SESSION['usuario_id'] ?? $_SESSION['user_id'] ?? 0;
+
+        // ROL 3: MÉDICO (Ver solo sus pacientes asignados)
+        if ($rol == 3 || strtolower((string)$rol) === 'medico' || strtolower((string)$rol) === 'médico') {
+            $query = "SELECT c.*, p.nombres, p.apellidos, p.expediente, p.fecha_nacimiento
+                      FROM citas c
+                      INNER JOIN medicos m ON m.id = c.medico_id
+                      INNER JOIN pacientes p ON c.paciente_id = p.id
+                      WHERE m.usuario_id = :medico_id AND c.estado = 'En espera'
+                      ORDER BY c.created_at ASC, c.id ASC";
+
+            $stmt = $db->prepare($query);
+            $stmt->execute([':medico_id' => $usuario_id]);
+            $pacientesEnEspera = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            require_once __DIR__ . '/../views/medico/dashboard.php';
+            exit();
+        }
+
+        // Enfermería / recepción: cola y médicos disponibles para asignación.
+        $queryCitas = "SELECT c.id, p.expediente,
+                              CONCAT(p.nombres, ' ', p.apellidos) AS paciente_nombre,
+                              CONCAT(u.nombre, ' ', u.apellido) AS medico_nombre,
+                              c.hora AS hora_entrada, c.estado
+                       FROM citas c
+                       INNER JOIN pacientes p ON c.paciente_id = p.id
+                       INNER JOIN medicos m ON m.id = c.medico_id
+                       INNER JOIN usuarios u ON u.id = m.usuario_id
+                       WHERE c.fecha = CURDATE() AND c.estado IN ('En espera', 'En consulta')
+                       ORDER BY c.created_at ASC, c.id ASC";
+
+        $stmtC = $db->prepare($queryCitas);
+        $stmtC->execute();
+        $colaEspera = $stmtC->fetchAll(PDO::FETCH_ASSOC);
+
+        // Lista de médicos activos
+        $queryMedicos = "SELECT m.id AS medico_id,
+                                CONCAT(u.nombre, ' ', u.apellido) AS nombre_completo,
+                                e.nombre AS especialidad
+                         FROM medicos m
+                         INNER JOIN usuarios u ON u.id = m.usuario_id
+                         INNER JOIN black_especialidades e ON e.id = m.especialidad_id
+                         WHERE u.rol_id = 3 AND u.activo = 1
+                         ORDER BY u.nombre, u.apellido";
+        $stmtM = $db->prepare($queryMedicos);
+        $stmtM->execute();
+        $medicos = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+
+        // Últimos pacientes creados
+        $queryPacientes = "SELECT * FROM pacientes ORDER BY id DESC LIMIT 50";
+        $stmtP = $db->prepare($queryPacientes);
+        $stmtP->execute();
+        $pacientes = $stmtP->fetchAll(PDO::FETCH_ASSOC);
 
         require_once __DIR__ . '/../views/enfermera/dashboard.php';
     }
 
-    public function registrarPaciente() {
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            try {
-                $db = $this->getDB();
-
-                $nombres                        = trim($_POST['nombres'] ?? '');
-                $apellidos                      = trim($_POST['apellidos'] ?? '');
-                $fecha_nacimiento               = $_POST['fecha_nacimiento'] ?? '';
-                $sexo                           = $_POST['sexo'] ?? 'Masculino';
-                $dui                            = !empty($_POST['dui']) ? trim($_POST['dui']) : null;
-                $telefono                       = trim($_POST['telefono'] ?? '');
-                $direccion                      = !empty($_POST['direccion']) ? trim($_POST['direccion']) : null;
-                $contacto_emergencia_nombre     = !empty($_POST['contacto_emergencia_nombre']) ? trim($_POST['contacto_emergencia_nombre']) : null;
-                $contacto_emergencia_telefono   = !empty($_POST['contacto_emergencia_telefono']) ? trim($_POST['contacto_emergencia_telefono']) : null;
-
-                $expediente = 'VS-' . date('Y') . '-' . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
-
-                $sql = "INSERT INTO pacientes (
-                            expediente, nombres, apellidos, fecha_nacimiento, sexo, 
-                            dui, direccion, telefono, contacto_emergencia_nombre, 
-                            contacto_emergencia_telefono, created_at
-                        ) VALUES (
-                            :expediente, :nombres, :apellidos, :fecha_nacimiento, :sexo, 
-                            :dui, :direccion, :telefono, :contacto_emergencia_nombre, 
-                            :contacto_emergencia_telefono, NOW()
-                        )";
-                
-                $stmt = $db->prepare($sql);
-                $stmt->execute([
-                    ':expediente'                   => $expediente,
-                    ':nombres'                      => $nombres,
-                    ':apellidos'                    => $apellidos,
-                    ':fecha_nacimiento'             => $fecha_nacimiento,
-                    ':sexo'                         => $sexo,
-                    ':dui'                          => $dui,
-                    ':direccion'                    => $direccion,
-                    ':telefono'                     => $telefono,
-                    ':contacto_emergencia_nombre'   => $contacto_emergencia_nombre,
-                    ':contacto_emergencia_telefono' => $contacto_emergencia_telefono
-                ]);
-
-                unset($_SESSION['form_data']);
-                header("Location: index.php?action=dashboard&success=paciente_registrado");
-                exit();
-
-            } catch (Exception $e) {
-                header("Location: index.php?action=dashboard&error=error_registro");
-                exit();
-            }
-        }
-    }
-
-    public function buscarPacienteAjax() {
-        if (ob_get_length()) ob_clean();
+    public function buscarAjax() {
+        Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
         header('Content-Type: application/json; charset=utf-8');
 
-        $q = trim($_GET['q'] ?? '');
-
-        if ($q === '') {
-            echo json_encode([]);
-            exit();
+        $query = trim($_GET['q'] ?? '');
+        if (strlen($query) < 2) {
+            echo json_encode([], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+        if (strlen($query) > 100) {
+            http_response_code(400);
+            echo json_encode(['error' => 'La búsqueda no debe superar 100 caracteres.'], JSON_UNESCAPED_UNICODE);
+            return;
         }
 
         try {
+            $pacientes = (new Paciente())->buscar($query);
+            echo json_encode($pacientes, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        } catch (PDOException $e) {
+            error_log('VitaSalud patient search failure: ' . $e->getMessage());
+            http_response_code(500);
+            echo json_encode(['error' => 'No fue posible buscar pacientes. Intente de nuevo.'], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // CREAR NUEVO EXPEDIENTE
+    // ---------------------------------------------------------------------
+    public function guardar() {
+        $this->verificarSesion();
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db = $this->getDB();
-            $param = '%' . $q . '%';
 
-            $sql = "SELECT id, expediente, nombres, apellidos, IFNULL(dui, '') AS dui, telefono 
-                    FROM pacientes 
-                    WHERE nombres LIKE :q1 
-                       OR apellidos LIKE :q2 
-                       OR expediente LIKE :q3 
-                       OR dui LIKE :q4
-                    LIMIT 10";
+            $nombres = trim($_POST['nombres'] ?? '');
+            $apellidos = trim($_POST['apellidos'] ?? '');
+            $fecha_nac = $_POST['fecha_nacimiento'] ?? null;
+            $sexo = $_POST['sexo'] ?? '';
+            $dui = trim($_POST['dui'] ?? '');
+            $telefono = trim($_POST['telefono'] ?? '');
+            $direccion = trim($_POST['direccion'] ?? '');
+            $expediente = 'VS-' . date('Y') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
 
-            $stmt = $db->prepare($sql);
+            $stmt = $db->prepare("INSERT INTO pacientes (expediente, nombres, apellidos, fecha_nacimiento, sexo, dui, telefono, direccion)
+                                  VALUES (:expediente, :nombres, :apellidos, :fecha_nac, :sexo, :dui, :telefono, :direccion)");
+
             $stmt->execute([
-                ':q1' => $param,
-                ':q2' => $param,
-                ':q3' => $param,
-                ':q4' => $param
+                ':expediente' => $expediente,
+                ':nombres' => $nombres,
+                ':apellidos' => $apellidos,
+                ':fecha_nac' => $fecha_nac,
+                ':sexo' => $sexo,
+                ':dui' => $dui,
+                ':telefono' => $telefono,
+                ':direccion' => $direccion
             ]);
 
-            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE);
-            exit();
-
-        } catch (Exception $e) {
-            echo json_encode(['error' => $e->getMessage()]);
+            header("Location: index.php?action=dashboard&success=1");
             exit();
         }
     }
 
-    public function guardarTriaje() {
+    // ---------------------------------------------------------------------
+    // ASIGNAR PACIENTE A MÉDICO
+    // ---------------------------------------------------------------------
+    public function asignarMedico() {
+        $this->verificarSesion();
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            try {
-                $db = $this->getDB();
+            $db = $this->getDB();
+            $paciente_id = $_POST['paciente_id'] ?? null;
+            $medico_id = $_POST['medico_id'] ?? null;
 
-                $paciente_id             = !empty($_POST['paciente_id']) ? $_POST['paciente_id'] : null;
-                $medico_id               = !empty($_POST['medico_id']) ? $_POST['medico_id'] : null;
-                $presion_arterial        = !empty($_POST['presion_arterial']) ? trim($_POST['presion_arterial']) : null;
-                $temperatura             = !empty($_POST['temperatura']) ? $_POST['temperatura'] : null;
-                $frecuencia_cardiaca     = !empty($_POST['frecuencia_cardiaca']) ? $_POST['frecuencia_cardiaca'] : null;
-                $frecuencia_respiratoria = !empty($_POST['frecuencia_respiratoria']) ? $_POST['frecuencia_respiratoria'] : null;
-                $peso                    = !empty($_POST['peso']) ? $_POST['peso'] : null;
-                $talla                   = !empty($_POST['talla']) ? $_POST['talla'] : null;
-
-                if (!$paciente_id || !$medico_id) {
-                    header("Location: index.php?action=dashboard&error=datos_incompletos");
-                    exit();
-                }
-
-                $db->beginTransaction();
-
-                // 1. Crear Cita con estado 'En espera'
-                $sqlCita = "INSERT INTO citas (paciente_id, medico_id, fecha, hora, estado, tipo_ingreso, created_at) 
-                            VALUES (:paciente_id, :medico_id, CURDATE(), CURTIME(), 'En espera', 'Orden de Llegada', NOW())";
-                
-                $stmtCita = $db->prepare($sqlCita);
-                $stmtCita->execute([
+            if ($paciente_id && $medico_id) {
+                $stmt = $db->prepare("INSERT INTO citas (paciente_id, medico_id, estado)
+                                      VALUES (:paciente_id, :medico_id, 'En espera')");
+                $stmt->execute([
                     ':paciente_id' => $paciente_id,
-                    ':medico_id'   => $medico_id
+                    ':medico_id' => $medico_id
                 ]);
-
-                $cita_id = $db->lastInsertId();
-
-                // 2. Registrar Signos Vitales asociados a la Cita
-                $sqlSignos = "INSERT INTO signos_vitales (
-                                cita_id, peso_kg, estatura_cm, temperatura_c, 
-                                presion_arterial, frecuencia_cardiaca, frecuencia_respiratoria, fecha_registro
-                            ) VALUES (
-                                :cita_id, :peso_kg, :estatura_cm, :temperatura_c, 
-                                :presion_arterial, :frecuencia_cardiaca, :frecuencia_respiratoria, NOW()
-                            )";
-
-                $stmtSignos = $db->prepare($sqlSignos);
-                $stmtSignos->execute([
-                    ':cita_id'                => $cita_id,
-                    ':peso_kg'                => $peso,
-                    ':estatura_cm'            => $talla,
-                    ':temperatura_c'          => $temperatura,
-                    ':presion_arterial'       => $presion_arterial,
-                    ':frecuencia_cardiaca'    => $frecuencia_cardiaca,
-                    ':frecuencia_respiratoria'=> $frecuencia_respiratoria
-                ]);
-
-                $db->commit();
-
-                header("Location: index.php?action=dashboard&success=triaje_guardado");
-                exit();
-
-            } catch (Exception $e) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                }
-                header("Location: index.php?action=dashboard&error=error_triaje");
-                exit();
             }
+
+            header("Location: index.php?action=dashboard");
+            exit();
         }
     }
 }

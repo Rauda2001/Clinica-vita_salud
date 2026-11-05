@@ -1,17 +1,36 @@
 <?php
+
 class ReporteController {
     public function verDashboardReportes() {
-        Security::checkRole(['Administrador', 'Enfermera']);
+        Security::checkRole(['Administrador']);
         $db = Database::getConnection();
 
-        // Médicos y conteo diario
-        $atendidosHoy = $db->query("SELECT CONCAT('Dr(a). ', u.nombre, ' ', u.apellido) as medico, COUNT(c.id) as total 
-                                    FROM citas c JOIN medicos m ON c.medico_id = m.id JOIN usuarios u ON m.usuario_id = u.id 
-                                    WHERE c.estado = 'Atendida' AND c.fecha = CURDATE() GROUP BY m.id")->fetchAll();
+        $atendidosTotal = (int)$db->query(
+            "SELECT COUNT(DISTINCT paciente_id) FROM citas
+             WHERE estado = 'Atendida' AND fecha = CURDATE()"
+        )->fetchColumn();
+        $atendidosHoy = $db->query(
+            "SELECT CONCAT('Dr(a). ', u.nombre, ' ', u.apellido) AS medico,
+                    COUNT(c.id) AS total
+             FROM medicos m
+             JOIN usuarios u ON u.id = m.usuario_id
+             LEFT JOIN citas c ON c.medico_id = m.id
+                AND c.estado = 'Atendida' AND c.fecha = CURDATE()
+             WHERE u.activo = 1
+             GROUP BY m.id, u.nombre, u.apellido
+             ORDER BY total DESC, medico"
+        )->fetchAll();
+        $productosBajos = $db->query(
+            "SELECT id, nombre, categoria, stock, stock_minimo, unidad_medida
+             FROM inventario
+             WHERE activo = 1 AND stock <= stock_minimo
+             ORDER BY stock ASC, nombre"
+        )->fetchAll();
+        $pacientesRecientes = $db->query(
+            "SELECT id, expediente, nombres, apellidos
+             FROM pacientes ORDER BY id DESC LIMIT 50"
+        )->fetchAll();
 
-        // Ingresos consolidados mensuales agrupados por tipo
-        $ingresosMetodo = $db->query("SELECT metodo_pago, SUM(monto) as total FROM ingresos WHERE MONTH(fecha_pago) = MONTH(NOW()) GROUP BY metodo_pago")->fetchAll();
-
-        require_once __DIR__ . '/../views/admin/reportes.php';
+        require __DIR__ . '/../views/admin/reportes.php';
     }
 }

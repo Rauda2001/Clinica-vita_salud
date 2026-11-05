@@ -80,8 +80,17 @@
                 <div>Usuario o contraseña incorrectos.</div>
             </div>
         <?php endif; ?>
+        <?php if (isset($_GET['admin_created'])): ?>
+            <div class="alert alert-success small">Administrador creado. Inicia sesión con el nuevo usuario y contraseña.</div>
+        <?php endif; ?>
+        <?php if (!empty($requiereActualizarEsquema)): ?>
+            <div class="alert alert-warning small">
+                Para habilitar la recuperación, aplica en <code>vitasalud_db</code> el bloque de <code>configuracion_sistema</code> al final de <code>vitasalud_db.sql</code>.
+            </div>
+        <?php endif; ?>
 
         <form action="index.php?action=login" method="POST" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
             <!-- CAMPO USERNAME -->
             <div class="mb-3">
                 <label for="username" class="form-label fw-semibold small text-secondary">Nombre de Usuario</label>
@@ -105,6 +114,14 @@
                 <i class="bi bi-box-arrow-in-right me-1"></i> Iniciar Sesión
             </button>
         </form>
+        <?php if (!empty($puedeCrearAdministrador)): ?>
+            <div class="border-top mt-4 pt-3 text-center">
+                <a class="btn btn-outline-secondary btn-sm" href="index.php?action=crear_administrador_inicial">
+                    Crear administrador de recuperación (uso único)
+                </a>
+                <small class="d-block text-muted mt-2">Disponible únicamente desde este equipo y hasta que se complete una vez.</small>
+            </div>
+        <?php endif; ?>
     </div>
     
     <!-- PIE DE PÁGINA -->

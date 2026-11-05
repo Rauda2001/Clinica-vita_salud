@@ -70,6 +70,13 @@ if (session_status() === PHP_SESSION_NONE) {
             
             <hr class="text-secondary my-2">
             
+            <?php
+            $rolActual = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? null;
+            $esAdmin = (string)$rolActual === '1' || strtolower((string)$rolActual) === 'administrador';
+            $esEnfermeria = (string)$rolActual === '2' || strtolower((string)$rolActual) === 'enfermera';
+            $etiquetasRol = [1 => 'Administrador', 2 => 'Enfermería', 3 => 'Médico'];
+            $rolEtiqueta = is_numeric($rolActual) ? ($etiquetasRol[(int)$rolActual] ?? 'Usuario') : ($rolActual ?? 'Usuario');
+            ?>
             <small class="text-uppercase text-white-50 fw-bold mb-1 d-block" style="font-size: 0.65rem;">Módulos</small>
             <ul class="nav nav-pills flex-column mb-auto">
                 <li class="nav-item">
@@ -77,11 +84,13 @@ if (session_status() === PHP_SESSION_NONE) {
                         <i class="bi bi-speedometer2 me-2"></i> Panel Principal
                     </a>
                 </li>
-                <li>
-                    <a href="index.php?action=caja" class="nav-link">
-                        <i class="bi bi-graph-up-arrow me-2"></i> Caja y Reportes
-                    </a>
-                </li>
+                <?php if ($esEnfermeria || $esAdmin): ?>
+                <li><a href="index.php?action=inventario" class="nav-link"><i class="bi bi-capsule me-2"></i> Inventario y farmacia</a></li>
+                <?php endif; ?>
+                <?php if ($esAdmin): ?>
+                <li><a href="index.php?action=reportes" class="nav-link"><i class="bi bi-graph-up-arrow me-2"></i> Reportes administrativos</a></li>
+                <li><a href="index.php?action=usuarios" class="nav-link"><i class="bi bi-people-gear me-2"></i> Usuarios y contraseñas</a></li>
+                <?php endif; ?>
             </ul>
         </div>
         
@@ -94,7 +103,7 @@ if (session_status() === PHP_SESSION_NONE) {
                         <?= htmlspecialchars($_SESSION['usuario_nombre'] ?? 'Soraya Gómez') ?>
                     </strong>
                     <span class="badge bg-secondary" style="font-size: 0.65rem;">
-                        <?= htmlspecialchars($_SESSION['usuario_rol'] ?? 'Enfermera') ?>
+                        <?= htmlspecialchars($rolEtiqueta, ENT_QUOTES, 'UTF-8') ?>
                     </span>
                 </div>
             </div>

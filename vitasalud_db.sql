@@ -455,6 +455,78 @@ ALTER TABLE `signos_vitales`
 --
 ALTER TABLE `usuarios`
   ADD CONSTRAINT `usuarios_ibfk_1` FOREIGN KEY (`rol_id`) REFERENCES `roles` (`id`);
+
+--
+-- Tablas adicionales del módulo de inventario y farmacia.
+-- Se agregan a vitasalud_db; no crean una base de datos nueva.
+--
+CREATE TABLE IF NOT EXISTS `inventario` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(150) NOT NULL,
+  `descripcion` text DEFAULT NULL,
+  `categoria` varchar(80) NOT NULL DEFAULT 'Medicamento',
+  `unidad_medida` varchar(40) NOT NULL DEFAULT 'unidad',
+  `stock` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `stock_minimo` decimal(10,2) NOT NULL DEFAULT 5.00,
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_inventario_stock` (`activo`,`stock`,`stock_minimo`),
+  CONSTRAINT `chk_inventario_stock` CHECK (`stock` >= 0),
+  CONSTRAINT `chk_inventario_stock_minimo` CHECK (`stock_minimo` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Compatibilidad con la tabla inventario anterior (id, nombre, stock, unidad).
+-- ADD/CHANGE IF EXISTS evita duplicar columnas al ejecutar este bloque más de una vez.
+--
+ALTER TABLE `inventario`
+  CHANGE COLUMN IF EXISTS `unidad` `unidad_medida` varchar(50) DEFAULT 'unidades',
+  ADD COLUMN IF NOT EXISTS `descripcion` text DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `categoria` varchar(80) NOT NULL DEFAULT 'Medicamento',
+  ADD COLUMN IF NOT EXISTS `unidad_medida` varchar(50) DEFAULT 'unidades',
+  ADD COLUMN IF NOT EXISTS `stock_minimo` decimal(10,2) NOT NULL DEFAULT 5.00,
+  ADD COLUMN IF NOT EXISTS `activo` tinyint(1) NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  ADD COLUMN IF NOT EXISTS `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp();
+
+CREATE TABLE IF NOT EXISTS `ordenes_aplicacion` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `historial_id` int(11) NOT NULL,
+  `inventario_id` int(11) NOT NULL,
+  `cantidad` decimal(10,2) NOT NULL,
+  `indicaciones` varchar(500) DEFAULT NULL,
+  `estado` enum('Pendiente','Despachado') NOT NULL DEFAULT 'Pendiente',
+  `creado_en` timestamp NOT NULL DEFAULT current_timestamp(),
+  `despachado_por` int(11) DEFAULT NULL,
+  `despachado_en` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ordenes_estado` (`estado`,`creado_en`),
+  KEY `idx_ordenes_historial` (`historial_id`),
+  KEY `idx_ordenes_inventario_estado` (`inventario_id`,`estado`),
+  CONSTRAINT `chk_ordenes_cantidad` CHECK (`cantidad` > 0),
+  CONSTRAINT `fk_ordenes_historial` FOREIGN KEY (`historial_id`)
+    REFERENCES `historial_clinico` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ordenes_inventario` FOREIGN KEY (`inventario_id`)
+    REFERENCES `inventario` (`id`),
+  CONSTRAINT `fk_ordenes_despachado_por` FOREIGN KEY (`despachado_por`)
+    REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Control para permitir crear un administrador de recuperación una sola vez.
+-- En una base existente, ejecutar este CREATE TABLE y el INSERT IGNORE.
+--
+CREATE TABLE IF NOT EXISTS `configuracion_sistema` (
+  `clave` varchar(80) NOT NULL,
+  `valor` varchar(255) NOT NULL,
+  PRIMARY KEY (`clave`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `configuracion_sistema` (`clave`, `valor`)
+VALUES ('administrador_inicial_creado', '0');
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

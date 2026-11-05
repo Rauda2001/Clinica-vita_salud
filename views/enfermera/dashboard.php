@@ -259,8 +259,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const contenedorResultados = document.getElementById('resultados_busqueda');
 
     if (inputBuscar && contenedorResultados) {
+        let temporizadorBusqueda;
+        let solicitudActual;
+
         inputBuscar.addEventListener('input', function() {
             const query = this.value.trim();
+
+            window.clearTimeout(temporizadorBusqueda);
+            if (solicitudActual) solicitudActual.abort();
 
             if (query.length === 0) {
                 contenedorResultados.style.display = 'none';
@@ -268,8 +274,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            fetch('index.php?action=buscar_paciente_ajax&q=' + encodeURIComponent(query))
-                .then(response => response.json())
+            if (query.length < 2) {
+                contenedorResultados.innerHTML = '<div class="list-group-item text-muted p-2">Escribe al menos 2 caracteres para buscar.</div>';
+                contenedorResultados.style.display = 'block';
+                return;
+            }
+
+            temporizadorBusqueda = window.setTimeout(function() {
+                solicitudActual = new AbortController();
+                fetch('index.php?action=buscar_paciente_ajax&q=' + encodeURIComponent(query), {
+                    headers: { 'Accept': 'application/json' },
+                    signal: solicitudActual.signal
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('No fue posible completar la búsqueda.');
+                    return response.json();
+                })
                 .then(data => {
                     contenedorResultados.innerHTML = '';
 
@@ -278,13 +298,20 @@ document.addEventListener('DOMContentLoaded', function() {
                             const item = document.createElement('a');
                             item.href = '#';
                             item.className = 'list-group-item list-group-item-action py-2';
-                            item.innerHTML = `
-                                <div class="d-flex w-100 justify-content-between">
-                                    <strong class="text-primary">${paciente.nombres} ${paciente.apellidos}</strong>
-                                    <small class="badge bg-secondary">${paciente.expediente}</small>
-                                </div>
-                                <small class="text-muted">DUI: ${paciente.dui ? paciente.dui : 'N/A'} | Tel: ${paciente.telefono ? paciente.telefono : 'N/A'}</small>
-                            `;
+                            const encabezado = document.createElement('div');
+                            encabezado.className = 'd-flex w-100 justify-content-between';
+                            const nombre = document.createElement('strong');
+                            nombre.className = 'text-primary';
+                            nombre.textContent = paciente.nombres + ' ' + paciente.apellidos;
+                            const expediente = document.createElement('small');
+                            expediente.className = 'badge bg-secondary';
+                            expediente.textContent = paciente.expediente;
+                            encabezado.append(nombre, expediente);
+
+                            const datos = document.createElement('small');
+                            datos.className = 'text-muted';
+                            datos.textContent = 'DUI: ' + (paciente.dui || 'N/A') + ' | Tel: ' + (paciente.telefono || 'N/A');
+                            item.append(encabezado, datos);
 
                             item.addEventListener('click', function(e) {
                                 e.preventDefault();
@@ -307,7 +334,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         contenedorResultados.style.display = 'block';
                     }
                 })
-                .catch(err => console.error("Error al buscar:", err));
+                .catch(err => {
+                    if (err.name !== 'AbortError') {
+                        contenedorResultados.innerHTML = '<div class="list-group-item text-danger p-2">Error al buscar pacientes. Intenta de nuevo.</div>';
+                        contenedorResultados.style.display = 'block';
+                        console.error('Error al buscar pacientes:', err);
+                    }
+                });
+            }, 250);
         });
 
         document.addEventListener('click', function(e) {
