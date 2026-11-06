@@ -57,7 +57,18 @@ class PacienteController {
             exit();
         }
 
-        // Enfermería / recepción: cola y médicos disponibles para asignación.
+        require __DIR__ . '/../views/enfermera/dashboard.php';
+    }
+
+    public function nuevoExpediente() {
+        Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
+        require __DIR__ . '/../views/enfermera/nuevo_expediente.php';
+    }
+
+    public function triajeCola() {
+        Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
+        $db = $this->getDB();
+
         $queryCitas = "SELECT c.id, p.expediente,
                               CONCAT(p.nombres, ' ', p.apellidos) AS paciente_nombre,
                               CONCAT(u.nombre, ' ', u.apellido) AS medico_nombre,
@@ -73,7 +84,6 @@ class PacienteController {
         $stmtC->execute();
         $colaEspera = $stmtC->fetchAll(PDO::FETCH_ASSOC);
 
-        // Lista de médicos activos
         $queryMedicos = "SELECT m.id AS medico_id,
                                 CONCAT(u.nombre, ' ', u.apellido) AS nombre_completo,
                                 e.nombre AS especialidad
@@ -86,13 +96,41 @@ class PacienteController {
         $stmtM->execute();
         $medicos = $stmtM->fetchAll(PDO::FETCH_ASSOC);
 
-        // Últimos pacientes creados
-        $queryPacientes = "SELECT * FROM pacientes ORDER BY id DESC LIMIT 50";
-        $stmtP = $db->prepare($queryPacientes);
-        $stmtP->execute();
-        $pacientes = $stmtP->fetchAll(PDO::FETCH_ASSOC);
+        require __DIR__ . '/../views/enfermera/triaje.php';
+    }
 
-        require_once __DIR__ . '/../views/enfermera/dashboard.php';
+    public function pendientesEnfermeria() {
+        Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
+        $db = $this->getDB();
+
+        $citasPendientes = $db->query(
+            "SELECT c.id, c.fecha, c.hora, c.motivo,
+                    p.expediente,
+                    CONCAT(p.nombres, ' ', p.apellidos) AS paciente_nombre,
+                    CONCAT(u.nombre, ' ', u.apellido) AS medico_nombre
+             FROM citas c
+             INNER JOIN pacientes p ON p.id = c.paciente_id
+             INNER JOIN medicos m ON m.id = c.medico_id
+             INNER JOIN usuarios u ON u.id = m.usuario_id
+             WHERE c.estado = 'Pendiente' AND c.fecha >= CURDATE()
+             ORDER BY c.fecha, c.hora, c.id"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $ordenesPendientes = $db->query(
+            "SELECT oa.id, oa.cantidad, oa.indicaciones, oa.creado_en,
+                    i.nombre AS producto, i.unidad_medida,
+                    p.id AS paciente_id, p.nombres, p.apellidos, p.expediente,
+                    CONCAT(u.nombre, ' ', u.apellido) AS medico
+             FROM ordenes_aplicacion oa
+             INNER JOIN inventario i ON i.id = oa.inventario_id
+             INNER JOIN historial_clinico hc ON hc.id = oa.historial_id
+             INNER JOIN pacientes p ON p.id = hc.paciente_id
+             INNER JOIN usuarios u ON u.id = hc.medico_id
+             WHERE oa.estado = 'Pendiente'
+             ORDER BY oa.creado_en, oa.id"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        require __DIR__ . '/../views/enfermera/pendientes.php';
     }
 
     public function buscarAjax() {
@@ -124,36 +162,66 @@ class PacienteController {
     // CREAR NUEVO EXPEDIENTE
     // ---------------------------------------------------------------------
     public function guardar() {
-        $this->verificarSesion();
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $db = $this->getDB();
-
-            $nombres = trim($_POST['nombres'] ?? '');
-            $apellidos = trim($_POST['apellidos'] ?? '');
-            $fecha_nac = $_POST['fecha_nacimiento'] ?? null;
-            $sexo = $_POST['sexo'] ?? '';
-            $dui = trim($_POST['dui'] ?? '');
-            $telefono = trim($_POST['telefono'] ?? '');
-            $direccion = trim($_POST['direccion'] ?? '');
-            $expediente = 'VS-' . date('Y') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-
-            $stmt = $db->prepare("INSERT INTO pacientes (expediente, nombres, apellidos, fecha_nacimiento, sexo, dui, telefono, direccion)
-                                  VALUES (:expediente, :nombres, :apellidos, :fecha_nac, :sexo, :dui, :telefono, :direccion)");
-
-            $stmt->execute([
-                ':expediente' => $expediente,
-                ':nombres' => $nombres,
-                ':apellidos' => $apellidos,
-                ':fecha_nac' => $fecha_nac,
-                ':sexo' => $sexo,
-                ':dui' => $dui,
-                ':telefono' => $telefono,
-                ':direccion' => $direccion
-            ]);
-
-            header("Location: index.php?action=dashboard&success=1");
-            exit();
+        Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' ||
+            !Security::validateCSRFToken($_POST['csrf_token'] ?? '')) {
+            http_response_code(400);
+            throw new RuntimeException('Solicitud no válida o token de seguridad vencido.');
         }
+
+        $readString = static function ($field) {
+            $value = $_POST[$field] ?? '';
+            if (!is_string($value)) {
+                throw new InvalidArgumentException('Los datos del expediente no son válidos.');
+            }
+            return trim($value);
+        };
+
+        $nombres = $readString('nombres');
+        $apellidos = $readString('apellidos');
+        $fechaNac = $readString('fecha_nacimiento');
+        $sexo = $readString('sexo');
+        $dui = $readString('dui');
+        $telefono = $readString('telefono');
+        $direccion = $readString('direccion');
+        $contactoNombre = $readString('contacto_emergencia_nombre');
+        $contactoTelefono = $readString('contacto_emergencia_telefono');
+        $fechaValida = DateTime::createFromFormat('Y-m-d', $fechaNac);
+
+        if ($nombres === '' || strlen($nombres) > 100 ||
+            $apellidos === '' || strlen($apellidos) > 100 ||
+            !$fechaValida || $fechaValida->format('Y-m-d') !== $fechaNac ||
+            !in_array($sexo, ['Masculino', 'Femenino', 'Otros'], true) ||
+            $telefono === '' || strlen($telefono) > 20 ||
+            strlen($dui) > 10 || strlen($contactoNombre) > 150 ||
+            strlen($contactoTelefono) > 20) {
+            throw new InvalidArgumentException('Revise los campos obligatorios y sus formatos.');
+        }
+
+        $expediente = 'VS-' . date('Y') . '-' . str_pad((string)random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+        $stmt = $this->getDB()->prepare(
+            'INSERT INTO pacientes
+                (expediente, nombres, apellidos, fecha_nacimiento, sexo, dui, telefono, direccion,
+                 contacto_emergencia_nombre, contacto_emergencia_telefono)
+             VALUES
+                (:expediente, :nombres, :apellidos, :fecha_nac, :sexo, :dui, :telefono, :direccion,
+                 :contacto_nombre, :contacto_telefono)'
+        );
+        $stmt->execute([
+            ':expediente' => $expediente,
+            ':nombres' => $nombres,
+            ':apellidos' => $apellidos,
+            ':fecha_nac' => $fechaNac,
+            ':sexo' => $sexo,
+            ':dui' => $dui !== '' ? $dui : null,
+            ':telefono' => $telefono,
+            ':direccion' => $direccion !== '' ? $direccion : null,
+            ':contacto_nombre' => $contactoNombre !== '' ? $contactoNombre : null,
+            ':contacto_telefono' => $contactoTelefono !== '' ? $contactoTelefono : null,
+        ]);
+
+        header('Location: index.php?action=nuevo_expediente&success=paciente_registrado');
+        exit();
     }
 
     // ---------------------------------------------------------------------

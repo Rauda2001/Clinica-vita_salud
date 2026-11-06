@@ -58,18 +58,22 @@
                     <div class="card-header fw-bold">Medicamentos, sueros o insumos para aplicar en clínica</div>
                     <div class="card-body">
                         <?php if ($inventario): ?>
+                            <label for="buscar_producto_clinica" class="form-label">Buscar medicamento o insumo</label>
+                            <input type="search" id="buscar_producto_clinica" class="form-control mb-3"
+                                   placeholder="Escribe el nombre o la categoría..." autocomplete="off">
                             <div class="table-responsive">
                                 <table class="table table-sm align-middle mb-3">
                                     <thead><tr><th>Asignar</th><th>Producto</th><th>Disponible</th><th>Cantidad</th></tr></thead>
-                                    <tbody>
+                                    <tbody id="productos_clinica">
                                     <?php foreach ($inventario as $producto): ?>
-                                        <tr>
+                                        <tr class="producto-clinica" data-busqueda="<?= htmlspecialchars($producto['nombre'] . ' ' . $producto['categoria'], ENT_QUOTES, 'UTF-8') ?>">
                                             <td><input class="form-check-input" type="checkbox" name="producto_id[]" value="<?= (int)$producto['id'] ?>" aria-label="Asignar <?= htmlspecialchars($producto['nombre'], ENT_QUOTES, 'UTF-8') ?>"></td>
                                             <td><?= htmlspecialchars($producto['nombre'], ENT_QUOTES, 'UTF-8') ?> <small class="text-muted">(<?= htmlspecialchars($producto['categoria'], ENT_QUOTES, 'UTF-8') ?>)</small></td>
                                             <td><?= htmlspecialchars($producto['stock'], ENT_QUOTES, 'UTF-8') ?> <?= htmlspecialchars($producto['unidad_medida'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><input class="form-control form-control-sm" style="max-width: 120px" type="number" name="cantidad[<?= (int)$producto['id'] ?>]" min="0.01" step="0.01" value="1"></td>
                                         </tr>
                                     <?php endforeach; ?>
+                                    <tr id="sin_productos_coincidentes" hidden><td colspan="4" class="text-center text-muted">No hay medicamentos o insumos que coincidan con la búsqueda.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -84,7 +88,7 @@
                 <div class="mb-4">
                     <label class="form-label fw-bold">Próxima cita (opcional)</label>
                     <input type="date" name="proxima_cita" class="form-control" min="<?= htmlspecialchars(date('Y-m-d'), ENT_QUOTES, 'UTF-8') ?>">
-                    <small class="text-muted">Se agenda a las 9:00 a. m.; recepción puede modificar la hora posteriormente.</small>
+                    <small class="text-muted">Enfermería asignará la hora y aparecerá como pendiente en su panel.</small>
                 </div>
                 <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">
                     <i class="bi bi-check-circle-fill me-2"></i>Finalizar consulta e imprimir resumen
@@ -93,4 +97,27 @@
         </div>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const buscador = document.getElementById('buscar_producto_clinica');
+    const filas = document.querySelectorAll('.producto-clinica');
+    const filaSinCoincidencias = document.getElementById('sin_productos_coincidentes');
+
+    if (!buscador || !filaSinCoincidencias) return;
+
+    buscador.addEventListener('input', function() {
+        const termino = this.value.trim().toLocaleLowerCase();
+        let coincidencias = 0;
+
+        filas.forEach(function(fila) {
+            const texto = fila.dataset.busqueda.toLocaleLowerCase();
+            const coincide = texto.includes(termino);
+            fila.hidden = !coincide;
+            if (coincide) coincidencias++;
+        });
+
+        filaSinCoincidencias.hidden = coincidencias > 0;
+    });
+});
+</script>
 <?php require_once __DIR__ . '/../layouts/footer.php'; ?>

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/security.php';
 require_once __DIR__ . '/../controllers/AuthController.php';
 require_once __DIR__ . '/../controllers/PacienteController.php';
+require_once __DIR__ . '/../controllers/CitaController.php';
 require_once __DIR__ . '/../controllers/ConsultaController.php';
 require_once __DIR__ . '/../controllers/InventarioController.php';
 require_once __DIR__ . '/../controllers/ReporteController.php';
@@ -36,6 +37,15 @@ try {
                 (new PacienteController())->index();
             }
             break;
+        case 'nuevo_expediente':
+            (new PacienteController())->nuevoExpediente();
+            break;
+        case 'triaje_cola':
+            (new PacienteController())->triajeCola();
+            break;
+        case 'pendientes_enfermeria':
+            (new PacienteController())->pendientesEnfermeria();
+            break;
         case 'guardar_paciente':
         case 'registrar_paciente':
             (new PacienteController())->guardar();
@@ -45,6 +55,12 @@ try {
             break;
         case 'asignar_medico':
             (new PacienteController())->asignarMedico();
+            break;
+        case 'guardar_triaje':
+            (new CitaController())->guardarTriaje();
+            break;
+        case 'programar_hora_cita':
+            (new CitaController())->programarHora();
             break;
         case 'atender':
             (new ConsultaController())->atender();
@@ -61,6 +77,9 @@ try {
         case 'inventario':
             (new InventarioController())->index();
             break;
+        case 'imprimir_aplicaciones_pendientes':
+            (new InventarioController())->imprimirAplicacionesPendientes();
+            break;
         case 'guardar_producto':
             (new InventarioController())->guardarProducto();
             break;
@@ -69,6 +88,9 @@ try {
             break;
         case 'reportes':
             (new ReporteController())->verDashboardReportes();
+            break;
+        case 'pacientes_estadisticas':
+            (new ReporteController())->pacientesEstadisticas();
             break;
         case 'usuarios':
             (new UsuarioController())->index();

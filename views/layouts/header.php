@@ -73,21 +73,28 @@ if (session_status() === PHP_SESSION_NONE) {
             <?php
             $rolActual = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? null;
             $esAdmin = (string)$rolActual === '1' || strtolower((string)$rolActual) === 'administrador';
-            $esEnfermeria = (string)$rolActual === '2' || strtolower((string)$rolActual) === 'enfermera';
+            $esEnfermeria = (string)$rolActual === '2' || in_array(strtolower((string)$rolActual), ['enfermera', 'recepcion'], true);
             $etiquetasRol = [1 => 'Administrador', 2 => 'Enfermería', 3 => 'Médico'];
             $rolEtiqueta = is_numeric($rolActual) ? ($etiquetasRol[(int)$rolActual] ?? 'Usuario') : ($rolActual ?? 'Usuario');
             ?>
             <small class="text-uppercase text-white-50 fw-bold mb-1 d-block" style="font-size: 0.65rem;">Módulos</small>
             <ul class="nav nav-pills flex-column mb-auto">
                 <li class="nav-item">
-                    <a href="index.php?action=dashboard" class="nav-link active">
+                    <a href="index.php?action=dashboard" class="nav-link <?= ($_GET['action'] ?? 'dashboard') === 'dashboard' ? 'active' : '' ?>">
                         <i class="bi bi-speedometer2 me-2"></i> Panel Principal
                     </a>
                 </li>
                 <?php if ($esEnfermeria || $esAdmin): ?>
+                <li><a href="index.php?action=nuevo_expediente" class="nav-link <?= ($_GET['action'] ?? '') === 'nuevo_expediente' ? 'active' : '' ?>"><i class="bi bi-person-plus me-2"></i> Crear expediente</a></li>
+                <li><a href="index.php?action=triaje_cola" class="nav-link <?= ($_GET['action'] ?? '') === 'triaje_cola' ? 'active' : '' ?>"><i class="bi bi-activity me-2"></i> Triaje y cola de espera</a></li>
+                <li><a href="index.php?action=pendientes_enfermeria" class="nav-link <?= ($_GET['action'] ?? '') === 'pendientes_enfermeria' ? 'active' : '' ?>"><i class="bi bi-calendar2-check me-2"></i> Citas pendientes y aplicaciones</a></li>
+                <li><a href="index.php?action=pacientes_estadisticas" class="nav-link <?= ($_GET['action'] ?? '') === 'pacientes_estadisticas' ? 'active' : '' ?>"><i class="bi bi-people me-2"></i> Pacientes y estadísticas</a></li>
                 <li><a href="index.php?action=inventario" class="nav-link"><i class="bi bi-capsule me-2"></i> Inventario y farmacia</a></li>
                 <?php endif; ?>
                 <?php if ($esAdmin): ?>
+                <?php if (!$esEnfermeria): ?>
+                <li><a href="index.php?action=pacientes_estadisticas" class="nav-link <?= ($_GET['action'] ?? '') === 'pacientes_estadisticas' ? 'active' : '' ?>"><i class="bi bi-people me-2"></i> Pacientes y estadísticas</a></li>
+                <?php endif; ?>
                 <li><a href="index.php?action=reportes" class="nav-link"><i class="bi bi-graph-up-arrow me-2"></i> Reportes administrativos</a></li>
                 <li><a href="index.php?action=usuarios" class="nav-link"><i class="bi bi-people-gear me-2"></i> Usuarios y contraseñas</a></li>
                 <?php endif; ?>

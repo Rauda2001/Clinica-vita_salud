@@ -12,8 +12,11 @@
 </head>
 <body>
 <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-    <h1 class="h4">Resumen de consulta</h1>
-    <button class="btn btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button>
+    <h1 class="h4 mb-0">Resumen de consulta</h1>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="index.php?action=dashboard">Volver a cola</a>
+        <button class="btn btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button>
+    </div>
 </div>
 <header class="border-bottom pb-3 mb-4">
     <h1 class="h3">VitaSalud · Resumen de consulta médica</h1>

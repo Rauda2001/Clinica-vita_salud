@@ -29,6 +29,50 @@ class InventarioController {
         require __DIR__ . '/../views/enfermera/inventario.php';
     }
 
+    public function imprimirAplicacionesPendientes() {
+        Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
+        $pacienteIdInput = $_GET['paciente_id'] ?? null;
+        $pacienteId = is_string($pacienteIdInput) || is_int($pacienteIdInput)
+            ? filter_var($pacienteIdInput, FILTER_VALIDATE_INT)
+            : false;
+        if (!$pacienteId || $pacienteId < 1) {
+            throw new InvalidArgumentException('El paciente indicado no es válido.');
+        }
+
+        $db = $this->db();
+        $stmt = $db->prepare(
+            "SELECT p.id, p.expediente, p.nombres, p.apellidos
+             FROM pacientes p
+             WHERE p.id = ?"
+        );
+        $stmt->execute([$pacienteId]);
+        $paciente = $stmt->fetch();
+        if (!$paciente) {
+            http_response_code(404);
+            throw new RuntimeException('No se encontró el expediente del paciente.');
+        }
+
+        $stmt = $db->prepare(
+            "SELECT oa.id, oa.cantidad, oa.indicaciones,
+                    i.nombre AS producto, i.unidad_medida,
+                    CONCAT(u.nombre, ' ', u.apellido) AS medico
+             FROM ordenes_aplicacion oa
+             INNER JOIN inventario i ON i.id = oa.inventario_id
+             INNER JOIN historial_clinico hc ON hc.id = oa.historial_id
+             INNER JOIN usuarios u ON u.id = hc.medico_id
+             WHERE hc.paciente_id = ? AND oa.estado = 'Pendiente'
+             ORDER BY oa.creado_en, oa.id"
+        );
+        $stmt->execute([$pacienteId]);
+        $ordenes = $stmt->fetchAll();
+        if (!$ordenes) {
+            http_response_code(404);
+            throw new RuntimeException('El paciente no tiene aplicaciones pendientes para imprimir.');
+        }
+
+        require __DIR__ . '/../views/enfermera/aplicaciones_imprimible.php';
+    }
+
     public function guardarProducto() {
         Security::checkRole(['Administrador', 'Enfermera', 'Recepcion']);
         $this->validarPost();
@@ -141,7 +185,11 @@ class InventarioController {
             throw $e;
         }
 
-        header('Location: index.php?action=inventario&success=despacho_realizado');
+        $destinoPermitido = ['dashboard', 'pendientes_enfermeria', 'inventario'];
+        $destino = in_array($_POST['return_to'] ?? '', $destinoPermitido, true)
+            ? $_POST['return_to']
+            : 'inventario';
+        header('Location: index.php?action=' . $destino . '&success=despacho_realizado');
         exit();
     }
 

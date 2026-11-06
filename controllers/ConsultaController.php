@@ -152,7 +152,7 @@ class ConsultaController {
             if ($proximaCita !== '') {
                 $crearCita = $db->prepare(
                     "INSERT INTO citas (paciente_id, medico_id, fecha, hora, estado, tipo_ingreso, motivo)
-                     SELECT ?, id, ?, '09:00:00', 'Pendiente', 'Citado', 'Cita de seguimiento'
+                     SELECT ?, id, ?, '00:00:00', 'Pendiente', 'Citado', 'Cita de seguimiento'
                      FROM medicos WHERE usuario_id = ?"
                 );
                 $crearCita->execute([$cita['paciente_id'], $proximaCita, $userId]);
